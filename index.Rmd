@@ -1,0 +1,182 @@
+---
+title: "Analyze abaza stress"
+output: 
+  html_document:
+    df_print: paged
+date: '2022-05-10'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(tidyverse)
+theme_set(theme_bw())
+```
+
+## Достать данные
+
+Данные представляют собой аннотированные слова, записанные от 6 носителей в селении Красный Восток:
+
+```{bash}
+ls raw_data
+```
+
+От каждого носителя было записано от 74 до 79 стимульных слов:
+
+```{r}
+library(phonfieldwork)
+textgrids <- read_from_folder("raw_data", "textgrid")
+textgrids %>% 
+  filter(tier == 1) %>% 
+  distinct(source, content) %>% 
+  count(source)
+```
+
+Дальше следует описание данных, см. Appendix
+
+```{r picture, cache=TRUE}
+draw_sound(file_name = "raw_data/d23_stress.wav", 
+           annotation = "raw_data/d23_stress.TextGrid",
+           from = 0,
+           to = 10.6,
+           zoom = c(3.8, 4.4))
+```
+
+После этого мы применяем к этим данным вот этот скрипт:
+
+```{bash}
+cat get_pitch_intencity.praat
+```
+
+Скрипт идет по аннотации и с шагом в 1 мс и базовыми настройками, отраженными в меню (между `form` и `endform`), берет значения длительности, f0, f1, f2, f3 и инетнсивности. Получается вот такая вот таблица:
+
+```{r}
+df <- read_tsv("data/log.txt", col_names = FALSE)
+colnames(df) <- c("speaker", "vowel", "utterance", "word", "translation", "f0", "f1", "f2", "f3", "intensity", "duration", "step")
+df
+```
+
+Дальше с данными можно делать разное, я просто возьму среднее по всем параметрами и создам переменную minimal_pair, которая будет включать минимальную пару:
+
+```{r}
+df %>% 
+  mutate_all(function(i){str_replace(i, "--undefined--", NA_character_)}) %>%
+  mutate(across(f0:duration, as.double),
+         stressed = ifelse(vowel == toupper(vowel), "stressed", "unstressed"),
+         stressed = factor(stressed, levels = c("unstressed", "stressed")),
+         vowel_n = str_extract(utterance, "V\\d"),
+         vowel_n = as.double(str_remove(vowel_n, "V")),
+         utterance = str_extract(utterance, "u\\d"),
+         utterance = as.double(str_remove(utterance, "u"))) %>% 
+  filter(str_detect(vowel, "[аА]"),
+         utterance <= 4) %>% 
+  select(-step) %>% 
+  group_by(speaker, utterance, stressed, word, vowel_n) %>% 
+  summarise(f0 = mean(f0, na.rm = TRUE),
+            f1 = mean(f1, na.rm = TRUE),
+            f2 = mean(f2, na.rm = TRUE),
+            f3 = mean(f3, na.rm = TRUE),
+            intensity = mean(intensity, na.rm = TRUE),
+            duration = mean(duration, na.rm = TRUE)) %>% 
+  mutate(vowel_n = str_c(vowel_n, ". syllable"),
+         utterance = str_c(utterance, ". utterance"),
+         duration = duration*1000) %>% 
+  ungroup() %>% 
+  group_by(speaker) %>% 
+  mutate(word_pair = as.double(factor(tolower(word)))) %>%
+  group_by(word_pair) %>% 
+  mutate(minimal_pair = str_c(unique(str_c(word, "_")), collapse = ""),
+         minimal_pair = str_remove(minimal_pair, "_$")) %>% 
+  ungroup() ->
+  mean_values
+mean_values
+```
+
+График с разницами между минимальными парами (ударный слог минус безударный). Если разницы нет, то горб должен возвышаться над 0. Если же он от нуля смещен, то значит разница между ударными и безударными слогами есть.
+
+```{r}
+mean_values %>% 
+  select(speaker, utterance, stressed, minimal_pair, vowel_n, duration) %>% 
+  pivot_wider(names_from = stressed, values_from = duration) %>% 
+  mutate(duration_differance = stressed-unstressed) %>% 
+  ggplot(aes(duration_differance, fill = vowel_n))+
+  geom_density(alpha = 0.4)+
+  facet_grid(speaker~utterance, scales = "free")
+
+mean_values %>% 
+  select(speaker, utterance, stressed, minimal_pair, vowel_n, f0) %>% 
+  pivot_wider(names_from = stressed, values_from = f0) %>% 
+  mutate(f0_differance = stressed-unstressed) %>% 
+  ggplot(aes(f0_differance, fill = vowel_n))+
+  geom_density(alpha = 0.4)+
+  facet_grid(speaker~utterance, scales = "free")
+
+mean_values %>% 
+  select(speaker, utterance, stressed, minimal_pair, vowel_n, intensity) %>% 
+  pivot_wider(names_from = stressed, values_from = intensity) %>% 
+  mutate(intensity_differance = stressed-unstressed) %>% 
+  ggplot(aes(intensity_differance, fill = vowel_n))+
+  geom_density(alpha = 0.4)+
+  facet_grid(speaker~utterance, scales = "free")
+```
+
+## Статистика
+
+Я использую байесовскую логистическую регрессию со смешанными эффектами с дефолтными прайерами и формула выглядит вот так:
+
+```
+stressed ~ ПЕРЕМЕННАЯ * vowel_n + (1|speaker) + (1|minimal_pair/utterance)
+```
+
+Получается взаимодействие переменной и номера гласного в слове с носителем в смешанных эффектах и номером произнесения вложенным в минимальную пару в другом смешанном эффекте.
+
+```{r fit_duration, cache=TRUE}
+library(brms)
+mean_values %>% 
+  select(speaker, utterance, stressed, minimal_pair, vowel_n, duration) %>% 
+  brm(stressed ~ duration*vowel_n + (1|speaker) + (vowel_n+1|minimal_pair/utterance),
+      family = bernoulli(),
+      data = .) ->
+  fit_duration
+
+conditional_effects(fit_duration,
+                    effects = c("duration:vowel_n"))
+```
+
+```{r fit_f0, cache=TRUE}
+mean_values %>% 
+  select(speaker, utterance, stressed, minimal_pair, vowel_n, f0) %>% 
+  brm(stressed ~ f0*vowel_n + (1|speaker) + (vowel_n+1|minimal_pair/utterance),
+      family = bernoulli(),
+      data = .) ->
+  fit_f0
+
+conditional_effects(fit_f0,
+                    effects = c("f0:vowel_n"))
+```
+
+```{r fit_intensity, cache = TRUE}
+mean_values %>% 
+  select(speaker, utterance, stressed, minimal_pair, vowel_n, intensity) %>% 
+  brm(stressed ~ intensity*vowel_n + (1|speaker) + (vowel_n+1|minimal_pair/utterance),
+      family = bernoulli(),
+      data = .) ->
+  fit_intensity
+
+conditional_effects(fit_intensity,
+                    effects = c("intensity:vowel_n"))
+```
+
+## Appendix: list of stimuli
+
+```{r}
+textgrids %>% 
+  filter(tier == 1) %>% 
+  distinct(content, source) %>% 
+  rename(word = content,
+         speaker = source) %>% 
+  mutate(speaker = str_extract(speaker, "d\\d\\d"))
+```
+
+Нужно в IPA перевести... https://github.com/agricolamz/abaza_cyrillic_to_trans

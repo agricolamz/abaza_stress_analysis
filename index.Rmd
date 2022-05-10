@@ -114,7 +114,8 @@ mean_values
 mean_values %>% 
   distinct(speaker, word_pair, minimal_pair) %>% 
   pivot_wider(names_from = speaker, values_from = minimal_pair) %>% 
-  select(-word_pair)
+  select(-word_pair) %>% 
+  write_csv("~/Desktop/pairs.csv")
 ```
 
 График с разницами между минимальными парами (ударный слог минус безударный). Если разницы нет, то горб должен возвышаться над 0. Если же он от нуля смещен, то значит разница между ударными и безударными слогами есть.
@@ -123,24 +124,24 @@ mean_values %>%
 mean_values %>% 
   select(speaker, utterance, stressed, minimal_pair, vowel_n, duration) %>% 
   pivot_wider(names_from = stressed, values_from = duration) %>% 
-  mutate(duration_differance = stressed-unstressed) %>% 
-  ggplot(aes(duration_differance, fill = vowel_n))+
+  mutate(duration_difference = stressed-unstressed) %>% 
+  ggplot(aes(duration_difference, fill = vowel_n))+
   geom_density(alpha = 0.4)+
   facet_grid(speaker~utterance, scales = "free")
 
 mean_values %>% 
   select(speaker, utterance, stressed, minimal_pair, vowel_n, f0) %>% 
   pivot_wider(names_from = stressed, values_from = f0) %>% 
-  mutate(f0_differance = stressed-unstressed) %>% 
-  ggplot(aes(f0_differance, fill = vowel_n))+
+  mutate(f0_difference = stressed-unstressed) %>% 
+  ggplot(aes(f0_difference, fill = vowel_n))+
   geom_density(alpha = 0.4)+
   facet_grid(speaker~utterance, scales = "free")
 
 mean_values %>% 
   select(speaker, utterance, stressed, minimal_pair, vowel_n, intensity) %>% 
   pivot_wider(names_from = stressed, values_from = intensity) %>% 
-  mutate(intensity_differance = stressed-unstressed) %>% 
-  ggplot(aes(intensity_differance, fill = vowel_n))+
+  mutate(intensity_difference = stressed-unstressed) %>% 
+  ggplot(aes(intensity_difference, fill = vowel_n))+
   geom_density(alpha = 0.4)+
   facet_grid(speaker~utterance, scales = "free")
 ```

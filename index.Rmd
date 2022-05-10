@@ -33,6 +33,21 @@ textgrids %>%
   count(source)
 ```
 
+Чего мы удалили? Про это нужно написать.
+
+```{r}
+textgrids %>% 
+  filter(tier_name %in% c("labels", "error")) %>% 
+  select(-tier, -id) %>% 
+  pivot_wider(names_from = tier_name, values_from = content) %>% 
+  mutate(speaker = str_remove(source, ".TextGrid"),
+         word = labels) %>% 
+  filter(!is.na(error), error != "") %>% 
+  select(speaker, word) ->
+  to_remove
+to_remove
+```
+
 Дальше следует описание данных, см. Appendix
 
 ```{r picture, cache=TRUE}
@@ -72,6 +87,7 @@ df %>%
   filter(str_detect(vowel, "[аА]"),
          utterance <= 4) %>% 
   select(-step) %>% 
+  anti_join(to_remove) %>% 
   group_by(speaker, utterance, stressed, word, vowel_n) %>% 
   summarise(f0 = mean(f0, na.rm = TRUE),
             f1 = mean(f1, na.rm = TRUE),
@@ -83,14 +99,22 @@ df %>%
          utterance = str_c(utterance, ". utterance"),
          duration = duration*1000) %>% 
   ungroup() %>% 
-  group_by(speaker) %>% 
-  mutate(word_pair = as.double(factor(tolower(word)))) %>%
+  mutate(word_pair = as.double(factor(tolower(word)))) %>% 
   group_by(word_pair) %>% 
   mutate(minimal_pair = str_c(unique(str_c(word, "_")), collapse = ""),
          minimal_pair = str_remove(minimal_pair, "_$")) %>% 
   ungroup() ->
   mean_values
 mean_values
+```
+
+Вы спрашивали, какие минимальные пары вошли в анализ?
+
+```{r}
+mean_values %>% 
+  distinct(speaker, word_pair, minimal_pair) %>% 
+  pivot_wider(names_from = speaker, values_from = minimal_pair) %>% 
+  select(-word_pair)
 ```
 
 График с разницами между минимальными парами (ударный слог минус безударный). Если разницы нет, то горб должен возвышаться над 0. Если же он от нуля смещен, то значит разница между ударными и безударными слогами есть.
@@ -139,7 +163,6 @@ mean_values %>%
       family = bernoulli(),
       data = .) ->
   fit_duration
-
 conditional_effects(fit_duration,
                     effects = c("duration:vowel_n"))
 ```
@@ -151,7 +174,6 @@ mean_values %>%
       family = bernoulli(),
       data = .) ->
   fit_f0
-
 conditional_effects(fit_f0,
                     effects = c("f0:vowel_n"))
 ```
@@ -163,7 +185,6 @@ mean_values %>%
       family = bernoulli(),
       data = .) ->
   fit_intensity
-
 conditional_effects(fit_intensity,
                     effects = c("intensity:vowel_n"))
 ```

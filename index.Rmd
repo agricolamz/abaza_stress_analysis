@@ -164,6 +164,11 @@ mean_values %>%
       family = bernoulli(),
       data = .) ->
   fit_duration
+
+fit_duration
+
+plot(fit_duration)
+
 conditional_effects(fit_duration,
                     effects = c("duration:vowel_n"))
 ```
@@ -175,6 +180,11 @@ mean_values %>%
       family = bernoulli(),
       data = .) ->
   fit_f0
+
+fit_f0
+
+plot(fit_f0)
+
 conditional_effects(fit_f0,
                     effects = c("f0:vowel_n"))
 ```
@@ -186,6 +196,11 @@ mean_values %>%
       family = bernoulli(),
       data = .) ->
   fit_intensity
+
+fit_intensity
+
+plot(fit_intensity)
+
 conditional_effects(fit_intensity,
                     effects = c("intensity:vowel_n"))
 ```
